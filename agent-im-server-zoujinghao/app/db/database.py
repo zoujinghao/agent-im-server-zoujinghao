@@ -1,5 +1,6 @@
 import sqlite3
 import os
+import json
 from datetime import datetime
 from typing import List, Optional, Tuple
 from ..models.models import Conversation, Message, ToolCallRecord
@@ -13,62 +14,88 @@ class Database:
     def get_connection(self):
         return sqlite3.connect(self.db_path)
 
+    def _execute_query(self, query: str, params: tuple = (), fetch: bool = False):
+        """Execute a query with proper connection management"""
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(query, params)
+            if fetch:
+                result = cursor.fetchall()
+                conn.close()
+                return result
+            else:
+                conn.commit()
+                conn.close()
+                return cursor.lastrowid
+        except Exception as e:
+            conn.close()
+            raise e
+
     def init_database(self):
         """Initialize the database with required tables"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
+        conn = None
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
 
-        # Create conversations table
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS conversations (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                title TEXT NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
+            # Create conversations table
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS conversations (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    title TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
 
-        # Create messages table
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS messages (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                conversation_id INTEGER NOT NULL,
-                sender_type TEXT NOT NULL CHECK(sender_type IN ('user', 'agent')),
-                content TEXT NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                tool_calls TEXT,
-                FOREIGN KEY (conversation_id) REFERENCES conversations (id) ON DELETE CASCADE
-            )
-        ''')
+            # Create messages table
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS messages (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    conversation_id INTEGER NOT NULL,
+                    sender_type TEXT NOT NULL CHECK(sender_type IN ('user', 'agent')),
+                    content TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    tool_calls TEXT,
+                    FOREIGN KEY (conversation_id) REFERENCES conversations (id) ON DELETE CASCADE
+                )
+            ''')
 
-        # Create tool_call_records table
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS tool_call_records (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                message_id INTEGER NOT NULL,
-                tool_name TEXT NOT NULL,
-                arguments TEXT NOT NULL,
-                result TEXT NOT NULL,
-                duration_ms INTEGER NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (message_id) REFERENCES messages (id) ON DELETE CASCADE
-            )
-        ''')
+            # Create tool_call_records table
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS tool_call_records (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    message_id INTEGER NOT NULL,
+                    tool_name TEXT NOT NULL,
+                    arguments TEXT NOT NULL,
+                    result TEXT NOT NULL,
+                    duration_ms INTEGER NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (message_id) REFERENCES messages (id) ON DELETE CASCADE
+                )
+            ''')
 
-        conn.commit()
-        conn.close()
+            conn.commit()
+        finally:
+            if conn:
+                conn.close()
 
     def create_conversation(self, title: str = "") -> int:
         """Create a new conversation and return its ID"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute(
-            "INSERT INTO conversations (title) VALUES (?)",
-            (title or f"Conversation {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')}",)
-        )
-        conversation_id = cursor.lastrowid
-        conn.commit()
-        conn.close()
-        return conversation_id
+        conn = None
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.execute(
+                "INSERT INTO conversations (title) VALUES (?)",
+                (title or f"Conversation {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')}",)
+            )
+            conversation_id = cursor.lastrowid
+            conn.commit()
+            return conversation_id
+        finally:
+            if conn:
+                conn.close()
 
     def get_conversations(self) -> List[Conversation]:
         """Get all conversations"""

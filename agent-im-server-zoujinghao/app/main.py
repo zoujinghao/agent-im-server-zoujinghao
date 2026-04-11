@@ -3,6 +3,10 @@ import signal
 import sys
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Use absolute imports since we're running as a module
 from app.api.routes import router as api_router
@@ -25,6 +29,17 @@ app.add_middleware(
 
 # Include API routes
 app.include_router(api_router)
+
+
+@app.get("/")
+async def root():
+    """Root endpoint that returns basic information about the service"""
+    return {
+        "message": "Welcome to Agent IM Server",
+        "version": "1.0.0",
+        "docs": "/docs",
+        "redoc": "/redoc"
+    }
 
 
 @app.on_event("startup")

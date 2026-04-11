@@ -82,20 +82,29 @@ async def send_message(
     
     # Process with agent engine
     async def send_event(event_type: str, data: dict):
-        # For now, we'll just print events (in real implementation, this would send via WebSocket)
+        # Broadcast events to WebSocket connections
         event_data = {
             "type": event_type,
             "data": data,
             "conversation_id": conversation_id
         }
-        # In a real implementation, this would broadcast to WebSocket connections
-        # await connection_manager.broadcast_to_conversation(conversation_id, json.dumps(event_data))
+        await connection_manager.broadcast_to_conversation(conversation_id, json.dumps(event_data))
     
     try:
-        final_response = await agent_engine.process_conversation(messages, send_event)
+        final_response, tool_calls = await agent_engine.process_conversation(messages, send_event)
         
         # Save agent response
         agent_message_id = db.create_message(conversation_id, "agent", final_response)
+        
+        # Save tool call records
+        for tool_call in tool_calls:
+            db.create_tool_call_record(
+                message_id=agent_message_id,
+                tool_name=tool_call["tool_name"],
+                arguments=tool_call["arguments"],
+                result=tool_call["result"],
+                duration_ms=tool_call["duration_ms"]
+            )
         
         return {
             "message_id": agent_message_id,

@@ -16,13 +16,14 @@ class AgentEngine:
         self,
         messages: List[Message],
         send_event: Callable[[str, Any], None]
-    ) -> str:
+    ) -> tuple[str, list]:
         """
         Process a conversation with the agent engine.
-        Returns the final response text.
+        Returns tuple of (final response text, tool call records)
         """
         conversation_history = self._messages_to_llm_format(messages)
         current_messages = conversation_history.copy()
+        all_tool_calls = []
         
         for iteration in range(self.max_iterations):
             # Call LLM (mock implementation)
@@ -33,7 +34,7 @@ class AgentEngine:
                 final_text = llm_response["content"]
                 send_event("text_delta", {"content": final_text})
                 send_event("done", {"content": final_text})
-                return final_text
+                return final_text, all_tool_calls
                 
             elif llm_response.get("type") == "tool_call":
                 # Tool call response - execute tools in parallel
@@ -54,14 +55,14 @@ class AgentEngine:
                     
                     # Create task for tool execution
                     task = self._execute_tool_with_timeout(tool_name, arguments, send_event)
-                    tasks.append((tool_name, task))
+                    tasks.append((tool_name, arguments, task))
                 
                 # Wait for all tools to complete (with individual timeouts handled in _execute_tool_with_timeout)
-                results = await asyncio.gather(*[task for _, task in tasks], return_exceptions=True)
+                results = await asyncio.gather(*[task for _, _, task in tasks], return_exceptions=True)
                 
                 # Process results
                 for i, result in enumerate(results):
-                    tool_name = tasks[i][0]
+                    tool_name, arguments = tasks[i][0], tasks[i][1]
                     
                     if isinstance(result, Exception):
                         error_result = f"Error executing {tool_name}: {str(result)}"
@@ -79,6 +80,14 @@ class AgentEngine:
                     
                     tool_results.append({
                         "tool_name": tool_name,
+                        "result": error_result,
+                        "duration_ms": duration_ms
+                    })
+                    
+                    # Store tool call info for database saving
+                    all_tool_calls.append({
+                        "tool_name": tool_name,
+                        "arguments": arguments,
                         "result": error_result,
                         "duration_ms": duration_ms
                     })
@@ -101,13 +110,13 @@ class AgentEngine:
                 error_msg = "Unexpected LLM response format"
                 send_event("text_delta", {"content": error_msg})
                 send_event("done", {"content": error_msg})
-                return error_msg
+                return error_msg, all_tool_calls
         
         # Max iterations reached
         max_iter_msg = "Maximum number of iterations reached. Please try again with a more specific query."
         send_event("text_delta", {"content": max_iter_msg})
         send_event("done", {"content": max_iter_msg})
-        return max_iter_msg
+        return max_iter_msg, all_tool_calls
 
     def _messages_to_llm_format(self, messages: List[Message]) -> List[Dict[str, Any]]:
         """Convert our Message objects to LLM-compatible format"""
