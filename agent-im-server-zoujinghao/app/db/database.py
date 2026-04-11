@@ -3,6 +3,7 @@ import os
 import json
 from datetime import datetime
 from typing import List, Optional, Tuple
+import asyncio
 from ..models.models import Conversation, Message, ToolCallRecord
 
 
@@ -14,8 +15,8 @@ class Database:
     def get_connection(self):
         return sqlite3.connect(self.db_path)
 
-    def _execute_query(self, query: str, params: tuple = (), fetch: bool = False):
-        """Execute a query with proper connection management"""
+    def _execute_query_sync(self, query: str, params: tuple = (), fetch: bool = False):
+        """Execute a query with proper connection management (synchronous version)"""
         conn = self.get_connection()
         try:
             cursor = conn.cursor()
@@ -31,6 +32,17 @@ class Database:
         except Exception as e:
             conn.close()
             raise e
+
+    async def _execute_query(self, query: str, params: tuple = (), fetch: bool = False):
+        """Execute a query asynchronously using run_in_executor"""
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(
+            None, 
+            self._execute_query_sync, 
+            query, 
+            params, 
+            fetch
+        )
 
     def init_database(self):
         """Initialize the database with required tables"""
@@ -61,6 +73,12 @@ class Database:
                 )
             ''')
 
+            # Create index on conversation_id for better query performance
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_messages_conversation_id 
+                ON messages (conversation_id)
+            ''')
+
             # Create tool_call_records table
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS tool_call_records (
@@ -73,6 +91,12 @@ class Database:
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (message_id) REFERENCES messages (id) ON DELETE CASCADE
                 )
+            ''')
+
+            # Create index on message_id for tool_call_records
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_tool_calls_message_id 
+                ON tool_call_records (message_id)
             ''')
 
             conn.commit()

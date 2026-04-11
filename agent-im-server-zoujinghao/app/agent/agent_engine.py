@@ -32,8 +32,8 @@ class AgentEngine:
             if llm_response.get("type") == "text":
                 # Pure text response - we're done
                 final_text = llm_response["content"]
-                send_event("text_delta", {"content": final_text})
-                send_event("done", {"content": final_text})
+                await send_event("text_delta", {"content": final_text})
+                await send_event("done", {"content": final_text})
                 return final_text, all_tool_calls
                 
             elif llm_response.get("type") == "tool_call":
@@ -48,7 +48,7 @@ class AgentEngine:
                     arguments = tool_call["arguments"]
                     
                     # Send tool_call event
-                    send_event("tool_call", {
+                    await send_event("tool_call", {
                         "tool_name": tool_name,
                         "arguments": arguments
                     })
@@ -72,7 +72,7 @@ class AgentEngine:
                         duration_ms = result["duration_ms"]
                     
                     # Send tool_result event
-                    send_event("tool_result", {
+                    await send_event("tool_result", {
                         "tool_name": tool_name,
                         "result": error_result,
                         "duration_ms": duration_ms
@@ -108,14 +108,14 @@ class AgentEngine:
             else:
                 # Unexpected response type
                 error_msg = "Unexpected LLM response format"
-                send_event("text_delta", {"content": error_msg})
-                send_event("done", {"content": error_msg})
+                await send_event("text_delta", {"content": error_msg})
+                await send_event("done", {"content": error_msg})
                 return error_msg, all_tool_calls
         
         # Max iterations reached
         max_iter_msg = "Maximum number of iterations reached. Please try again with a more specific query."
-        send_event("text_delta", {"content": max_iter_msg})
-        send_event("done", {"content": max_iter_msg})
+        await send_event("text_delta", {"content": max_iter_msg})
+        await send_event("done", {"content": max_iter_msg})
         return max_iter_msg, all_tool_calls
 
     def _messages_to_llm_format(self, messages: List[Message]) -> List[Dict[str, Any]]:
